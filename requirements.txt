@@ -1,0 +1,21 @@
+aiofiles
+
+# Core web framework
+fastapi==0.128.3
+uvicorn[standard]==0.39.0
+
+# File handling
+aiofiles==25.1.0
+python-multipart==0.0.20
+
+# Transcription
+faster-whisper==1.2.1
+
+# Numerical and ML runtime
+numpy<2
+# Use PyTorch CPU wheel from the official PyTorch index for compatibility on CPUs
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.0
+
+# Data validation
+pydantic==2.12.5

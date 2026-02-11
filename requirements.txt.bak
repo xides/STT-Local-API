@@ -1,0 +1,12 @@
+aiofiles
+fastapi
+uvicorn[standard]
+faster-whisper
+# Use PyTorch CPU wheel from the official CPU index. When pip installs from this file,
+# the extra index URL will be used to fetch a CPU-only torch build compatible with many
+# Linux distributions.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.0
+python-multipart
+aiofiles
+pydantic
