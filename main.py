@@ -20,6 +20,9 @@ BEAM_SIZE = int(os.getenv("BEAM_SIZE", "5"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 MAX_CONCURRENT_TRANSCRIBES = int(os.getenv("MAX_CONCURRENT_TRANSCRIBES", "1"))
 FFMPEG_TIMEOUT_SECONDS = int(os.getenv("FFMPEG_TIMEOUT_SECONDS", "45"))
+FFPROBE_TIMEOUT_SECONDS = int(os.getenv("FFPROBE_TIMEOUT_SECONDS", "15"))
+MAX_AUDIO_SECONDS = int(os.getenv("MAX_AUDIO_SECONDS", "600"))
+ALLOW_OCTET_STREAM = os.getenv("ALLOW_OCTET_STREAM", "false").strip().lower() in {"1", "true", "yes", "on"}
 ENABLE_SQLITE_LOGS = os.getenv("ENABLE_SQLITE_LOGS", "true").strip().lower() in {"1", "true", "yes", "on"}
 TRANSCRIBE_LOG_DB_PATH = str(Path(os.getenv("TRANSCRIBE_LOG_DB_PATH", "transcribe_logs.db")).expanduser().resolve())
 MAX_LOG_PAYLOAD_CHARS = int(os.getenv("MAX_LOG_PAYLOAD_CHARS", "20000"))
@@ -38,8 +41,9 @@ ALLOWED_CONTENT_TYPES = {
     "audio/ogg",
     "audio/aac",
     "audio/webm",
-    "application/octet-stream",
 }
+if ALLOW_OCTET_STREAM:
+    ALLOWED_CONTENT_TYPES.add("application/octet-stream")
 
 app = FastAPI(title="Local Whisper STT", version="0.1")
 model = None
@@ -222,6 +226,66 @@ def _read_recent_transcribe_logs(limit: int) -> list[dict]:
     return out
 
 
+def _probe_audio_or_raise(input_path: str):
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_streams",
+        "-show_format",
+        "-print_format",
+        "json",
+        input_path,
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            check=True,
+            timeout=FFPROBE_TIMEOUT_SECONDS,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Tiempo de validacion excedido en ffprobe")
+    except subprocess.CalledProcessError:
+        raise HTTPException(status_code=422, detail="No se pudo validar el audio con ffprobe")
+
+    try:
+        probe = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Respuesta invalida de ffprobe")
+
+    streams = probe.get("streams", [])
+    audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+    if not audio_streams:
+        raise HTTPException(status_code=400, detail="Archivo no contiene un stream de audio valido")
+
+    duration_candidates = []
+    fmt = probe.get("format", {})
+    fmt_duration = fmt.get("duration")
+    if fmt_duration:
+        try:
+            duration_candidates.append(float(fmt_duration))
+        except (TypeError, ValueError):
+            pass
+
+    for stream in audio_streams:
+        stream_duration = stream.get("duration")
+        if stream_duration:
+            try:
+                duration_candidates.append(float(stream_duration))
+            except (TypeError, ValueError):
+                pass
+
+    if duration_candidates:
+        duration_seconds = max(duration_candidates)
+        if duration_seconds > MAX_AUDIO_SECONDS:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Audio demasiado largo. Maximo permitido: {MAX_AUDIO_SECONDS} segundos",
+            )
+
+
 async def _save_upload_with_limit(upload: UploadFile, destination_path: str, max_bytes: int) -> int:
     total_bytes = 0
     chunk_size = 1024 * 1024
@@ -371,6 +435,7 @@ async def transcribe(request: Request, file: UploadFile = File(...)):
             in_path = os.path.join(tmpdir, "input" + suffix)
             out_path = os.path.join(tmpdir, "audio.wav")
             uploaded_bytes = await _save_upload_with_limit(file, in_path, MAX_UPLOAD_BYTES)
+            _probe_audio_or_raise(in_path)
 
             cmd = [
                 "ffmpeg",
@@ -379,6 +444,8 @@ async def transcribe(request: Request, file: UploadFile = File(...)):
                 "-hide_banner",
                 "-loglevel",
                 "error",
+                "-protocol_whitelist",
+                "file,pipe",
                 "-i",
                 in_path,
                 "-vn",

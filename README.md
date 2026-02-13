@@ -103,6 +103,9 @@ Respuesta esperada:
 - `MAX_UPLOAD_BYTES` (default: `26214400`, 25 MB)
 - `MAX_CONCURRENT_TRANSCRIBES` (default: `1`)
 - `FFMPEG_TIMEOUT_SECONDS` (default: `45`)
+- `FFPROBE_TIMEOUT_SECONDS` (default: `15`)
+- `MAX_AUDIO_SECONDS` (default: `600`)
+- `ALLOW_OCTET_STREAM` (default: `false`)
 - `ENABLE_SQLITE_LOGS` (default: `true`)
 - `TRANSCRIBE_LOG_DB_PATH` (default: `transcribe_logs.db`)
 - `MAX_LOG_PAYLOAD_CHARS` (default: `20000`)
@@ -185,4 +188,12 @@ docker run --rm -p 8000:8000 \
 - `503 Modelo no cargado`: verifica `MODEL_NAME` y que el modelo exista.
 - `422 No se pudo procesar el audio`: revisa formato de entrada y `ffmpeg`.
 - `413 Archivo demasiado grande`: incrementa `MAX_UPLOAD_BYTES`.
+- `413 Audio demasiado largo`: incrementa `MAX_AUDIO_SECONDS` si necesitas archivos mas largos.
 - `429 Servicio ocupado`: incrementa `MAX_CONCURRENT_TRANSCRIBES` o reintenta.
+
+## Hardening de seguridad
+
+- Validacion previa con `ffprobe` para confirmar que el archivo contiene stream de audio.
+- Limite de duracion de audio configurable (`MAX_AUDIO_SECONDS`) para reducir riesgo de DoS.
+- `Content-Type` estricto por defecto (no acepta `application/octet-stream` salvo que habilites `ALLOW_OCTET_STREAM=true`).
+- Conversion con `ffmpeg` usando protocolos locales permitidos (`file,pipe`) para reducir superficie de ataque.
