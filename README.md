@@ -9,7 +9,7 @@ Servicio de transcripcion de audio a texto ejecutado localmente con `FastAPI`, `
 - Carga de modelo en background al iniciar
 - Normalizacion de audio a WAV 16 kHz mono con `ffmpeg`
 - Limite de concurrencia configurable para transcripciones
-- Restriccion de seguridad: los `POST` solo se aceptan desde `127.0.0.1`
+- Restriccion de seguridad configurable para `POST` por host de cliente
 
 ## Estructura del proyecto
 
@@ -17,19 +17,30 @@ Servicio de transcripcion de audio a texto ejecutado localmente con `FastAPI`, `
 - `templates/test.html`: interfaz para subir/grabar audio y probar la API
 - `start.sh`: levanta `uvicorn` en background y guarda PID en `.uvicorn.pid`
 - `stop.sh`: detiene el servicio por PID o por puerto
+- `setup_rocky10.sh`: instala dependencias de sistema para Rocky Linux 10.x
 - `MODEL_SETUP.md`: guia para preparar un modelo local de `ctranslate2`
-- `Dockerfile`: imagen basada en Rocky Linux 8
+- `Dockerfile`: imagen basada en Rocky Linux 10
 
 ## Requisitos (ejecucion local)
 
-- Python 3.9+
+- Python 3.10+
 - `ffmpeg` instalado en el sistema
 - Dependencias de `requirements.txt`
+
+## Instalacion en Rocky Linux 10.1
+
+```bash
+./setup_rocky10.sh
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
 ## Instalacion
 
 ```bash
-python3.9 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
@@ -91,6 +102,7 @@ Respuesta esperada:
 - `MAX_UPLOAD_BYTES` (default: `26214400`, 25 MB)
 - `MAX_CONCURRENT_TRANSCRIBES` (default: `1`)
 - `FFMPEG_TIMEOUT_SECONDS` (default: `45`)
+- `ALLOWED_POST_HOSTS` (default: `127.0.0.1,::1`; usa `*` para permitir todos)
 - `HOST` (solo para `start.sh`, default: `127.0.0.1`)
 - `PORT` (para `start.sh` y `stop.sh`, default: `8000`)
 
@@ -98,6 +110,12 @@ Ejemplo:
 
 ```bash
 MODEL_NAME=small MODEL_DEVICE=cpu BEAM_SIZE=5 ./start.sh
+```
+
+En servidor (red interna o reverse proxy), puedes abrir el endpoint:
+
+```bash
+ALLOWED_POST_HOSTS="*" HOST=0.0.0.0 PORT=8000 ./start.sh
 ```
 
 ## Docker

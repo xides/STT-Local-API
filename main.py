@@ -17,6 +17,9 @@ BEAM_SIZE = int(os.getenv("BEAM_SIZE", "5"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 MAX_CONCURRENT_TRANSCRIBES = int(os.getenv("MAX_CONCURRENT_TRANSCRIBES", "1"))
 FFMPEG_TIMEOUT_SECONDS = int(os.getenv("FFMPEG_TIMEOUT_SECONDS", "45"))
+ALLOWED_POST_HOSTS = {
+    h.strip() for h in os.getenv("ALLOWED_POST_HOSTS", "127.0.0.1,::1").split(",") if h.strip()
+}
 ALLOWED_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac", ".webm"}
 ALLOWED_CONTENT_TYPES = {
     "audio/wav",
@@ -83,7 +86,9 @@ async def _save_upload_with_limit(upload: UploadFile, destination_path: str, max
 
 
 def _is_allowed_post_host(host: str) -> bool:
-    return host == "127.0.0.1"
+    if "*" in ALLOWED_POST_HOSTS:
+        return True
+    return host in ALLOWED_POST_HOSTS
 
 
 @app.middleware("http")
@@ -92,7 +97,7 @@ async def restrict_post_to_localhost(request: Request, call_next):
     if request.method == "POST" and not _is_allowed_post_host(client_host):
         return JSONResponse(
             status_code=403,
-            content={"detail": "Solo se permiten requests POST desde 127.0.0.1"},
+            content={"detail": "Host no permitido para POST. Ajusta ALLOWED_POST_HOSTS para habilitarlo."},
         )
     return await call_next(request)
 
