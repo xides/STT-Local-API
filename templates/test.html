@@ -96,6 +96,69 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
+
+    .logs {
+      margin-top: 18px;
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+    }
+
+    .logs-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .logs-head h2 {
+      margin: 0;
+      font-size: 1.05rem;
+    }
+
+    .logs-table-wrap {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.87rem;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid #e5e7eb;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f8fafc;
+      font-weight: 700;
+      color: #374151;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .ok {
+      color: #166534;
+      font-weight: 700;
+    }
+
+    .error {
+      color: #b91c1c;
+      font-weight: 700;
+    }
   </style>
 </head>
 
@@ -115,6 +178,33 @@
     <audio id="recordedAudio" controls style="width: 100%; margin-bottom: 12px; display: none;"></audio>
     <div id="status" class="status"></div>
     <pre id="output">Aqui veras la respuesta JSON...</pre>
+    <section class="logs">
+      <div class="logs-head">
+        <h2>Ultimos 10 logs de /transcribe</h2>
+        <button id="refreshLogsBtn" type="button">Actualizar logs</button>
+      </div>
+      <div class="logs-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Fecha UTC</th>
+              <th>Status</th>
+              <th>OK</th>
+              <th>Archivo</th>
+              <th>Host</th>
+              <th>Latencia</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody id="logsBody">
+            <tr>
+              <td colspan="8">Cargando logs...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <script>
@@ -127,10 +217,68 @@
     const recordedAudio = document.getElementById("recordedAudio");
     const statusEl = document.getElementById("status");
     const outputEl = document.getElementById("output");
+    const logsBody = document.getElementById("logsBody");
+    const refreshLogsBtn = document.getElementById("refreshLogsBtn");
     let mediaRecorder = null;
     let mediaStream = null;
     let recordedChunks = [];
     let recordedBlob = null;
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function renderLogs(logs) {
+      if (!Array.isArray(logs) || logs.length === 0) {
+        logsBody.innerHTML = '<tr><td colspan="8">No hay logs todavia.</td></tr>';
+        return;
+      }
+
+      const rows = logs.map((log) => {
+        const okClass = log.ok ? "ok" : "error";
+        const okText = log.ok ? "Si" : "No";
+        const errorText = log.error_detail ? escapeHtml(log.error_detail) : "-";
+        return `
+          <tr>
+            <td>${escapeHtml(log.id)}</td>
+            <td>${escapeHtml(log.created_at)}</td>
+            <td>${escapeHtml(log.status_code)}</td>
+            <td class="${okClass}">${okText}</td>
+            <td>${escapeHtml(log.filename || "-")}</td>
+            <td>${escapeHtml(log.client_host || "-")}</td>
+            <td>${escapeHtml(log.latency_ms)} ms</td>
+            <td>${errorText}</td>
+          </tr>
+        `;
+      });
+      logsBody.innerHTML = rows.join("");
+    }
+
+    async function loadLogs() {
+      refreshLogsBtn.disabled = true;
+      try {
+        const response = await fetch("/transcribe/logs?limit=10");
+        const payload = await response.json();
+        if (!response.ok) {
+          logsBody.innerHTML = '<tr><td colspan="8">No se pudieron cargar logs.</td></tr>';
+          return;
+        }
+        if (payload.enabled === false) {
+          logsBody.innerHTML = '<tr><td colspan="8">Logs SQLite desactivados (ENABLE_SQLITE_LOGS=false).</td></tr>';
+          return;
+        }
+        renderLogs(payload.logs || []);
+      } catch (error) {
+        logsBody.innerHTML = '<tr><td colspan="8">Error de red al cargar logs.</td></tr>';
+      } finally {
+        refreshLogsBtn.disabled = false;
+      }
+    }
 
     async function sendAudioFile(file) {
       const data = new FormData();
@@ -163,6 +311,7 @@
         startRecBtn.disabled = false;
         stopRecBtn.disabled = true;
         sendRecBtn.disabled = !recordedBlob;
+        await loadLogs();
       }
     }
 
@@ -229,6 +378,12 @@
       const recordedFile = new File([recordedBlob], "recording.webm", { type: recordedBlob.type || "audio/webm" });
       await sendAudioFile(recordedFile);
     });
+
+    refreshLogsBtn.addEventListener("click", async () => {
+      await loadLogs();
+    });
+
+    loadLogs();
   </script>
 </body>
 

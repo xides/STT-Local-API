@@ -71,6 +71,7 @@ Detener:
 - `GET /`: redirige a `/test`
 - `GET /test`: UI para pruebas manuales (subida de archivo o grabacion)
 - `POST /transcribe`: recibe `multipart/form-data` con campo `file`
+- `GET /transcribe/logs?limit=10`: devuelve logs recientes de transcripcion
 
 Formatos permitidos por extension: `.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`, `.aac`, `.webm`
 
@@ -102,6 +103,9 @@ Respuesta esperada:
 - `MAX_UPLOAD_BYTES` (default: `26214400`, 25 MB)
 - `MAX_CONCURRENT_TRANSCRIBES` (default: `1`)
 - `FFMPEG_TIMEOUT_SECONDS` (default: `45`)
+- `ENABLE_SQLITE_LOGS` (default: `true`)
+- `TRANSCRIBE_LOG_DB_PATH` (default: `transcribe_logs.db`)
+- `MAX_LOG_PAYLOAD_CHARS` (default: `20000`)
 - `ALLOWED_POST_HOSTS` (default: `127.0.0.1,::1`; usa `*` para permitir todos)
 - `HOST` (solo para `start.sh`, default: `127.0.0.1`)
 - `PORT` (para `start.sh` y `stop.sh`, default: `8000`)
@@ -116,6 +120,27 @@ En servidor (red interna o reverse proxy), puedes abrir el endpoint:
 
 ```bash
 ALLOWED_POST_HOSTS="*" HOST=0.0.0.0 PORT=8000 ./start.sh
+```
+
+## Logs de /transcribe en base de datos
+
+Cada request a `POST /transcribe` (exito o error) se guarda en SQLite en:
+
+- `transcribe_logs.db` (por defecto)
+- Puedes desactivar esta funcionalidad con `ENABLE_SQLITE_LOGS=false`
+
+Campos registrados: timestamp UTC, host cliente, user-agent, nombre y tipo de archivo, tamano recibido, status HTTP, latencia, payload de respuesta (JSON) y detalle de error.
+
+Consultar ultimos registros:
+
+```bash
+sqlite3 transcribe_logs.db "SELECT id, created_at, client_host, filename, status_code, latency_ms FROM transcribe_logs ORDER BY id DESC LIMIT 20;"
+```
+
+Ver errores recientes:
+
+```bash
+sqlite3 transcribe_logs.db "SELECT id, created_at, status_code, error_detail FROM transcribe_logs WHERE ok = 0 ORDER BY id DESC LIMIT 20;"
 ```
 
 ## Docker
